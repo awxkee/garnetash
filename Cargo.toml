@@ -5,5 +5,16 @@ members = ["app"]
 name = "garnetash"
 version = "0.1.0"
 edition = "2024"
+description = "VVC encoder and decoder"
+readme = "README.md"
+keywords = ["vvc", "h266", "encoder", "decoder", "video"]
+license = "BSD-3-Clause OR Apache-2.0"
+authors = ["Radzivon Bartoshyk"]
+documentation = "https://docs.rs/garnetash"
+categories = ["multimedia::video", "multimedia::encoding", "compression"]
+homepage = "https://github.com/awxkee/garnetash"
+repository = "https://github.com/awxkee/garnetash"
+exclude = ["*.jpg", "/assets", "*.png", "*.sh", "/assets/*", "/scripts/*"]
+rust-version = "1.93.0"
 
 [dependencies]
