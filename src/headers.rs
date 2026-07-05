@@ -181,7 +181,9 @@ impl Headers {
         w.put_ue(self.coded_width()); // sps_pic_width_max_in_luma_samples
         w.put_ue(self.coded_height()); // sps_pic_height_max_in_luma_samples
 
-        // Conformance window crops the padding back to the requested size.
+        // Conformance window crops the padding back as far as the chroma format
+        // permits. Subsampled odd dimensions retain one replicated edge sample;
+        // the HEIF ispe property carries the exact display extent.
         let crop_r = (self.coded_width() - self.width) / self.chroma.sub_w() as u32;
         let crop_b = (self.coded_height() - self.height) / self.chroma.sub_h() as u32;
         if crop_r != 0 || crop_b != 0 {
@@ -1122,6 +1124,29 @@ mod tests {
             (h.coded_width() - h.width) / h.chroma.sub_w() as u32,
             (104 - 97) / 2
         );
+    }
+
+    #[test]
+    fn subsampled_odd_dimensions_retain_one_edge_sample() {
+        let h = Headers {
+            width: 1777,
+            height: 777,
+            chroma: ChromaFormat::Yuv420,
+            bit_depth: BitDepth::Eight,
+            qp: 30,
+            lossless: false,
+            aq: false,
+            mtt: false,
+            lfnst: false,
+            dep_quant: false,
+            mts: false,
+            dual_tree: false,
+            cclm: false,
+            deblock: false,
+        };
+        assert_eq!((h.coded_width(), h.coded_height()), (1784, 784));
+        let parsed = super::parse_sps(&h.write_sps_rbsp()).unwrap();
+        assert_eq!((parsed.width, parsed.height), (1778, 778));
     }
 
     #[test]

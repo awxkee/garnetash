@@ -1423,6 +1423,54 @@ pub fn decode_yuv_266(annexb: &[u8]) -> Result<DecodedImage, EncodeError> {
     decode_266(annexb)
 }
 
+fn crop_to_display_extent(
+    img: &mut DecodedImage,
+    width: u32,
+    height: u32,
+) -> Result<(), EncodeError> {
+    if width == 0 || height == 0 || width > img.width || height > img.height {
+        return Err(EncodeError::Decode("HEIF ispe exceeds coded image"));
+    }
+    if (width, height) == (img.width, img.height) {
+        return Ok(());
+    }
+
+    let bps = img.bytes_per_sample();
+    let (old_w, old_h) = (img.width as usize, img.height as usize);
+    let (new_w, new_h) = (width as usize, height as usize);
+    let (sub_w, sub_h) = (img.chroma.sub_w(), img.chroma.sub_h());
+    let has_chroma = !img.chroma.is_monochrome();
+    let (old_cw, old_ch) = if has_chroma {
+        (old_w.div_ceil(sub_w), old_h.div_ceil(sub_h))
+    } else {
+        (0, 0)
+    };
+    let (new_cw, new_ch) = if has_chroma {
+        (new_w.div_ceil(sub_w), new_h.div_ceil(sub_h))
+    } else {
+        (0, 0)
+    };
+    let old_y_len = old_w * old_h * bps;
+    let old_c_len = old_cw * old_ch * bps;
+    let mut planes = Vec::with_capacity((new_w * new_h + 2 * new_cw * new_ch) * bps);
+    for row in 0..new_h {
+        let start = row * old_w * bps;
+        planes.extend_from_slice(&img.planes[start..start + new_w * bps]);
+    }
+    if has_chroma {
+        for offset in [old_y_len, old_y_len + old_c_len] {
+            for row in 0..new_ch {
+                let start = offset + row * old_cw * bps;
+                planes.extend_from_slice(&img.planes[start..start + new_cw * bps]);
+            }
+        }
+    }
+    img.width = width;
+    img.height = height;
+    img.planes = planes;
+    Ok(())
+}
+
 /// Decode a HEIF file produced by garnetash's `*_to_heif` entry points. The
 /// embedded VVC stream is decoded to YCbCr, and the container is mined for side
 /// data: display orientation (`irot`/`imir`) and color metadata (CICP `nclx`
@@ -1433,12 +1481,21 @@ pub fn decode_yuv_266(annexb: &[u8]) -> Result<DecodedImage, EncodeError> {
 pub fn decode(heif: &[u8]) -> Result<DecodedImage, EncodeError> {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let mut img = decode_266(&crate::isobmff::extract_vvc_stream(heif)?)?;
+        if let Some((width, height)) = crate::isobmff::extract_spatial_extents(heif, 0) {
+            crop_to_display_extent(&mut img, width, height)?;
+        }
         let (orientation, color) = crate::isobmff::extract_metadata(heif);
         img.orientation = orientation;
         img.color = color;
         img.alpha = crate::isobmff::extract_alpha_stream(heif)
             .and_then(|s| decode_266(&s).ok())
-            .map(Box::new);
+            .map(|mut alpha| {
+                if let Some((width, height)) = crate::isobmff::extract_spatial_extents(heif, 1) {
+                    crop_to_display_extent(&mut alpha, width, height)?;
+                }
+                Ok(Box::new(alpha))
+            })
+            .transpose()?;
         Ok(img)
     }))
     .unwrap_or(Err(EncodeError::Decode("malformed HEIF (decode aborted)")))
@@ -1585,6 +1642,18 @@ mod tests {
             let a_channel: Vec<u8> = rgba.chunks_exact(4).map(|p| p[3]).collect();
             assert_eq!(alpha.planes, a_channel, "alpha {chroma:?}");
         }
+
+        let (w, h) = (9u32, 11u32);
+        let rgba = vec![127u8; (w * h * 4) as usize];
+        let cfg = EncodeConfig::new()
+            .with_lossless(true)
+            .with_chroma(ChromaFormat::Yuv420);
+        let heif = encode_rgba_with_alpha(&rgba, w, h, &cfg).unwrap();
+        let (master, alpha) = decode_with_alpha(&heif).unwrap();
+        assert_eq!((master.width, master.height), (w, h));
+        let alpha = alpha.unwrap();
+        assert_eq!((alpha.width, alpha.height), (w, h));
+        assert_eq!(alpha.planes, vec![127; (w * h) as usize]);
     }
 
     #[test]

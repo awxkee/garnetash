@@ -97,6 +97,17 @@ pub enum ChromaFormat {
 }
 
 impl ChromaFormat {
+    /// Return the least-expanded chroma format whose conformance-window units
+    /// can represent the requested luma dimensions exactly.
+    pub(crate) fn for_dimensions(self, width: u32, height: u32) -> Self {
+        match self {
+            ChromaFormat::Yuv420 if !width.is_multiple_of(2) => ChromaFormat::Yuv444,
+            ChromaFormat::Yuv420 if !height.is_multiple_of(2) => ChromaFormat::Yuv422,
+            ChromaFormat::Yuv422 if !width.is_multiple_of(2) => ChromaFormat::Yuv444,
+            _ => self,
+        }
+    }
+
     /// `sps_chroma_format_idc` value written in the SPS (H.266 Table 6-1).
     pub fn idc(self) -> u32 {
         match self {
@@ -183,5 +194,25 @@ mod tests {
         assert_eq!(ChromaFormat::Yuv444.sub_h(), 1);
         assert_eq!(ChromaFormat::Monochrome.idc(), 0);
         assert!(ChromaFormat::Monochrome.is_monochrome());
+    }
+
+    #[test]
+    fn odd_dimensions_promote_chroma_for_exact_crop() {
+        assert_eq!(
+            ChromaFormat::Yuv420.for_dimensions(1777, 777),
+            ChromaFormat::Yuv444
+        );
+        assert_eq!(
+            ChromaFormat::Yuv420.for_dimensions(1778, 777),
+            ChromaFormat::Yuv422
+        );
+        assert_eq!(
+            ChromaFormat::Yuv422.for_dimensions(1777, 778),
+            ChromaFormat::Yuv444
+        );
+        assert_eq!(
+            ChromaFormat::Yuv420.for_dimensions(1778, 778),
+            ChromaFormat::Yuv420
+        );
     }
 }
