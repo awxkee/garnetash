@@ -62,8 +62,8 @@ pub(crate) struct NeighborGrid {
 
 impl NeighborGrid {
     pub(crate) fn new(coded_w: u32, coded_h: u32) -> Self {
-        let cells_x = (coded_w as usize).div_ceil(4);
-        let cells_y = (coded_h as usize).div_ceil(4);
+        let cells_x = (coded_w as usize) / 4;
+        let cells_y = (coded_h as usize) / 4;
         let n = cells_x * cells_y;
         NeighborGrid {
             coded_w,
@@ -147,7 +147,7 @@ impl NeighborGrid {
     /// left of the block's bottom-left corner, available when `x > 0`.
     pub(crate) fn left_mode(&self, x: u32, y: u32, size: u32) -> Option<u8> {
         if x > 0 {
-            Some(self.mode_of[self.cell(x - 1, (y + size - 1).min(self.coded_h - 1))])
+            Some(self.mode_of[self.cell(x - 1, y + size - 1)])
         } else {
             None
         }
@@ -158,7 +158,7 @@ impl NeighborGrid {
     /// (i.e. the block is not at a CTU top boundary).
     pub(crate) fn above_mode(&self, x: u32, y: u32, size: u32) -> Option<u8> {
         if y & (CTU_SIZE - 1) != 0 {
-            Some(self.mode_of[self.cell((x + size - 1).min(self.coded_w - 1), y - 1)])
+            Some(self.mode_of[self.cell(x + size - 1, y - 1)])
         } else {
             None
         }
@@ -199,7 +199,7 @@ impl NeighborGrid {
     /// sample left of the bottom-left corner `(x-1, y+h-1)`, available when `x>0`.
     pub(crate) fn left_mode_rect(&self, x: u32, y: u32, h: u32) -> Option<u8> {
         if x > 0 {
-            Some(self.mode_of[self.cell(x - 1, (y + h - 1).min(self.coded_h - 1))])
+            Some(self.mode_of[self.cell(x - 1, y + h - 1)])
         } else {
             None
         }
@@ -209,7 +209,7 @@ impl NeighborGrid {
     /// `(x+w-1, y-1)`, available only when that sample is in the same CTU row.
     pub(crate) fn above_mode_rect(&self, x: u32, y: u32, w: u32) -> Option<u8> {
         if y & (CTU_SIZE - 1) != 0 {
-            Some(self.mode_of[self.cell((x + w - 1).min(self.coded_w - 1), y - 1)])
+            Some(self.mode_of[self.cell(x + w - 1, y - 1)])
         } else {
             None
         }
@@ -345,7 +345,7 @@ pub(crate) struct MttCfg {
 }
 
 const MAX_TB: u32 = 64;
-const MIN_CB: u32 = 1 << LOG2_MIN_CB_SIZE; // 8
+const MIN_CB: u32 = 1 << LOG2_MIN_CB_SIZE; // 4
 
 /// Fixed luma-intra MTT configuration garnetash signals and enforces. Chosen so
 /// the quadtree reaches 16×16 before binary/ternary splits take over (max BT/TT
@@ -430,17 +430,6 @@ fn implicit_split(
     if bl_in && tr_in {
         return MttSplit::None;
     }
-    if (bl_in || h <= MIN_CB) && (tr_in || w <= MIN_CB) {
-        return MttSplit::None;
-    }
-    if !bl_in && !tr_in {
-        if h <= MIN_CB {
-            return MttSplit::BinV;
-        }
-        if w <= MIN_CB {
-            return MttSplit::BinH;
-        }
-    }
     let bt_allowed = w <= cfg.max_bt_size
         && h <= cfg.max_bt_size
         && nc.mt_depth < (cfg.max_mtt_depth + nc.implicit_bt_depth);
@@ -487,7 +476,7 @@ fn can_split(
     if last != MttSplit::None && last != MttSplit::Quad {
         can_qt = false;
     }
-    if w <= cfg.min_qt_size || h <= cfg.min_qt_size {
+    if w <= cfg.min_qt_size {
         can_qt = false;
     }
 
@@ -621,7 +610,8 @@ fn code_node<D, L>(
     let can_qt = can_quad_split(log2size);
 
     let split = if !inside {
-        can_qt
+        debug_assert!(can_qt, "boundary block too small to split implicitly");
+        true
     } else if can_qt {
         let do_split = decide(x, y, size);
         let c = grid.ctx_split(x, y, size);
@@ -1053,7 +1043,7 @@ pub(crate) mod test_support {
         let inside = (x + size <= grid.coded_w) && (y + size <= grid.coded_h);
         let can_qt = can_quad_split(log2size);
         let split = if !inside {
-            can_qt
+            true
         } else if can_qt {
             let c = grid.ctx_split(x, y, size);
             dec.decode_bin(&mut ctx.split_flag[c]) != 0

@@ -907,6 +907,18 @@ pub(crate) fn extract_alpha_stream(heif: &[u8]) -> Option<Vec<u8>> {
     extract_item(heif, 1).ok()
 }
 
+/// Read the `ispe` display extent associated with an image item.
+pub(crate) fn extract_spatial_extents(heif: &[u8], want: usize) -> Option<(u32, u32)> {
+    let (meta_s, meta_e) = find_child(heif, 0, heif.len(), b"meta", true)?;
+    let (iprp_s, iprp_e) = find_child(heif, meta_s, meta_e, b"iprp", false)?;
+    let (ipco_s, ipco_e) = find_child(heif, iprp_s, iprp_e, b"ipco", false)?;
+    let (ispe_s, ispe_e) = find_nth_child(heif, ipco_s, ipco_e, b"ispe", want)?;
+    if ispe_s + 12 > ispe_e {
+        return None;
+    }
+    Some((rd32(heif, ispe_s + 4)?, rd32(heif, ispe_s + 8)?))
+}
+
 /// Read the master image's display orientation and color metadata from the
 /// container property store (`iprp`/`ipco`): the first `irot`/`imir` boxes give
 /// orientation, and the `colr` boxes give the CICP description (`nclx`) and/or

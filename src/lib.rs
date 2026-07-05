@@ -1616,7 +1616,13 @@ mod tests {
             EncodeConfig::default().with_lossless(true),
         ] {
             let stream = encode_rgb_266(&rgb, w, h, &cfg).unwrap();
-            let decoded = decode_266(&stream).unwrap();
+            let raw = decode_266(&stream).unwrap();
+            let raw_w = w.div_ceil(cfg.chroma.sub_w() as u32) * cfg.chroma.sub_w() as u32;
+            let raw_h = h.div_ceil(cfg.chroma.sub_h() as u32) * cfg.chroma.sub_h() as u32;
+            assert_eq!((raw.width, raw.height), (raw_w, raw_h));
+
+            let heif = encode_rgb(&rgb, w, h, &cfg).unwrap();
+            let decoded = decode(&heif).unwrap();
             assert_eq!((decoded.width, decoded.height), (w, h));
             assert_eq!(decoded.luma_plane().samples(), (w * h) as usize);
             let (cb, cr) = decoded.chroma_planes().unwrap();

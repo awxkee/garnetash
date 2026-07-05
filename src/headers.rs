@@ -36,8 +36,8 @@ use crate::fmt::{BitDepth, ChromaFormat};
 /// Log2 of the coding-tree-unit size. VVC permits 5, 6, or 7 (32/64/128);
 /// garnetash v1 uses 32.
 pub(crate) const LOG2_CTU_SIZE: u32 = 7;
-/// Log2 of the minimum luma coding block size (8×8).
-pub(crate) const LOG2_MIN_CB_SIZE: u32 = 3;
+/// Log2 of the minimum luma coding block size (4×4).
+pub(crate) const LOG2_MIN_CB_SIZE: u32 = 2;
 /// `general_level_idc`: Level 6.2 (`major*16 + minor*3` = 6*16 + 2*3 = 102),
 /// generous enough to cover all supported picture sizes for now.
 pub(crate) const LEVEL_IDC: u8 = 102;
@@ -89,8 +89,8 @@ pub(crate) struct Headers {
 }
 
 impl Headers {
-    /// Internal luma-plane width, padded up to MinCbSizeY. The SPS/PPS signal
-    /// the exact picture extent; boundary coding blocks cover the excess.
+    /// Coded luma width, padded up to a multiple of 8 (= Max(8, MinCbSizeY))
+    /// as required by VVC; the excess is cropped by the conformance window.
     pub(crate) fn coded_width(&self) -> u32 {
         (self.width + 7) & !7
     }
@@ -178,9 +178,23 @@ impl Headers {
         w.put_bit(0); // sps_gdr_enabled_flag
         w.put_bit(0); // sps_ref_pic_resampling_enabled_flag
 
-        w.put_ue(self.width); // sps_pic_width_max_in_luma_samples
-        w.put_ue(self.height); // sps_pic_height_max_in_luma_samples
-        w.put_bit(0); // sps_conformance_window_flag
+        w.put_ue(self.coded_width()); // sps_pic_width_max_in_luma_samples
+        w.put_ue(self.coded_height()); // sps_pic_height_max_in_luma_samples
+
+        // Conformance window crops the padding back as far as the chroma format
+        // permits. Subsampled odd dimensions retain one replicated edge sample;
+        // the HEIF ispe property carries the exact display extent.
+        let crop_r = (self.coded_width() - self.width) / self.chroma.sub_w() as u32;
+        let crop_b = (self.coded_height() - self.height) / self.chroma.sub_h() as u32;
+        if crop_r != 0 || crop_b != 0 {
+            w.put_bit(1); // sps_conformance_window_flag
+            w.put_ue(0); // sps_conf_win_left_offset
+            w.put_ue(crop_r); // sps_conf_win_right_offset
+            w.put_ue(0); // sps_conf_win_top_offset
+            w.put_ue(crop_b); // sps_conf_win_bottom_offset
+        } else {
+            w.put_bit(0); // sps_conformance_window_flag
+        }
 
         w.put_bit(0); // sps_subpic_info_present_flag
         w.put_ue(self.bit_depth.minus8() as u32); // sps_bitdepth_minus8
@@ -341,8 +355,8 @@ impl Headers {
         w.put_bits(0, 6); // pps_pic_parameter_set_id
         w.put_bits(0, 4); // pps_seq_parameter_set_id
         w.put_bit(0); // pps_mixed_nalu_types_in_pic_flag
-        w.put_ue(self.width); // pps_pic_width_in_luma_samples
-        w.put_ue(self.height); // pps_pic_height_in_luma_samples
+        w.put_ue(self.coded_width()); // pps_pic_width_in_luma_samples
+        w.put_ue(self.coded_height()); // pps_pic_height_in_luma_samples
         w.put_bit(0); // pps_conformance_window_flag (inherits SPS)
         w.put_bit(0); // pps_scaling_window_explicit_signalling_flag
         w.put_bit(0); // pps_output_flag_present_flag
@@ -797,9 +811,19 @@ mod tests {
 
         assert_eq!(r.read_bit(), 0); // gdr
         assert_eq!(r.read_bit(), 0); // rpr
-        assert_eq!(r.read_ue(), h.width);
-        assert_eq!(r.read_ue(), h.height);
-        assert_eq!(r.read_bit(), 0); // conformance_window_flag
+        assert_eq!(r.read_ue(), h.coded_width());
+        assert_eq!(r.read_ue(), h.coded_height());
+        let crop_r = (h.coded_width() - h.width) / h.chroma.sub_w() as u32;
+        let crop_b = (h.coded_height() - h.height) / h.chroma.sub_h() as u32;
+        if crop_r != 0 || crop_b != 0 {
+            assert_eq!(r.read_bit(), 1);
+            assert_eq!(r.read_ue(), 0);
+            assert_eq!(r.read_ue(), crop_r);
+            assert_eq!(r.read_ue(), 0);
+            assert_eq!(r.read_ue(), crop_b);
+        } else {
+            assert_eq!(r.read_bit(), 0);
+        }
         assert_eq!(r.read_bit(), 0); // subpic_info_present
         assert_eq!(r.read_ue(), h.bit_depth.minus8() as u32);
         assert_eq!(r.read_bit(), 0); // entropy_coding_sync
@@ -811,7 +835,7 @@ mod tests {
         assert_eq!(r.read_ue(), 0); // dpb_max_dec_pic_buffering_minus1
         assert_eq!(r.read_ue(), 0); // dpb_max_num_reorder_pics
         assert_eq!(r.read_ue(), 0); // dpb_max_latency_increase_plus1
-        assert_eq!(r.read_ue(), LOG2_MIN_CB_SIZE - 2); // log2_min_cb_minus2
+        assert_eq!(r.read_ue(), 0); // log2_min_cb_minus2
         assert_eq!(r.read_bit(), 0); // partition_constraints_override
         assert_eq!(r.read_ue(), 0); // diff_min_qt_min_cb_intra_luma
         assert_eq!(r.read_ue(), 0); // max_mtt_depth_intra_luma
@@ -913,8 +937,8 @@ mod tests {
         assert_eq!(r.read_bits(6), 0); // pps_id
         assert_eq!(r.read_bits(4), 0); // sps_id
         assert_eq!(r.read_bit(), 0); // mixed_nalu
-        assert_eq!(r.read_ue(), h.width);
-        assert_eq!(r.read_ue(), h.height);
+        assert_eq!(r.read_ue(), h.coded_width());
+        assert_eq!(r.read_ue(), h.coded_height());
         assert_eq!(r.read_bit(), 0); // conformance_window_flag
         assert_eq!(r.read_bit(), 0); // scaling_window
         assert_eq!(r.read_bit(), 0); // output_flag_present
@@ -1076,7 +1100,7 @@ mod tests {
     }
 
     #[test]
-    fn odd_dimensions_are_signalled_directly() {
+    fn conformance_window_set_when_padding_needed() {
         let h = Headers {
             width: 97,
             height: 33,
@@ -1095,8 +1119,34 @@ mod tests {
         };
         assert_eq!(h.coded_width(), 104);
         assert_eq!(h.coded_height(), 40);
+        // round-trip already asserts the window fields; just confirm padding math.
+        assert_eq!(
+            (h.coded_width() - h.width) / h.chroma.sub_w() as u32,
+            (104 - 97) / 2
+        );
+    }
+
+    #[test]
+    fn subsampled_odd_dimensions_retain_one_edge_sample() {
+        let h = Headers {
+            width: 1777,
+            height: 777,
+            chroma: ChromaFormat::Yuv420,
+            bit_depth: BitDepth::Eight,
+            qp: 30,
+            lossless: false,
+            aq: false,
+            mtt: false,
+            lfnst: false,
+            dep_quant: false,
+            mts: false,
+            dual_tree: false,
+            cclm: false,
+            deblock: false,
+        };
+        assert_eq!((h.coded_width(), h.coded_height()), (1784, 784));
         let parsed = super::parse_sps(&h.write_sps_rbsp()).unwrap();
-        assert_eq!((parsed.width, parsed.height), (97, 33));
+        assert_eq!((parsed.width, parsed.height), (1778, 778));
     }
 
     #[test]
