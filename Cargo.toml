@@ -3,7 +3,7 @@ members = ["app"]
 
 [package]
 name = "garnetash"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "VVC encoder and decoder"
 readme = "README.md"

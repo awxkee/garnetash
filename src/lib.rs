@@ -571,7 +571,7 @@ pub fn encode_rgba_with_alpha(
     // color image: RGB (alpha discarded by the 4-stride RGB path).
     let master = encode_rgba_266(rgba, width, height, cfg)?;
     // Alpha image: the A channel as a monochrome plane (Y = alpha, exact).
-    let alpha_plane: Vec<u8> = rgba.chunks_exact(4).map(|p| p[3]).collect();
+    let alpha_plane: Vec<u8> = rgba.as_chunks::<4>().0.iter().map(|p| p[3]).collect();
     let mono_cfg = cfg.clone().with_chroma(ChromaFormat::Monochrome);
     let alpha = encode_yuv_266(&alpha_plane, width, height, &mono_cfg)?;
     isobmff::wrap_vvc_still_with_alpha(
@@ -737,7 +737,7 @@ pub fn encode_rgba10_with_alpha(
 ) -> Result<Vec<u8>, EncodeError> {
     let cfg = force_bd(cfg, BitDepth::Ten);
     let master = encode_wide_stream(rgba, width, height, 4, &cfg)?;
-    let alpha_plane: Vec<u16> = rgba.chunks_exact(4).map(|p| p[3]).collect();
+    let alpha_plane: Vec<u16> = rgba.as_chunks::<4>().0.iter().map(|p| p[3]).collect();
     let alpha = encode_alpha_wide_stream(&alpha_plane, width, height, &cfg)?;
     isobmff::wrap_vvc_still_with_alpha(
         &master,
@@ -792,7 +792,7 @@ pub fn encode_gray_alpha8_266(
 ) -> Result<Vec<u8>, EncodeError> {
     validate_dims(width, height)?;
     validate_buf_u8(ya, width, height, 2)?;
-    let gray: Vec<u8> = ya.chunks_exact(2).map(|p| p[0]).collect();
+    let gray: Vec<u8> = ya.as_chunks::<2>().0.iter().map(|p| p[0]).collect();
     encode_gray_266(&gray, width, height, &force_bd(cfg, BitDepth::Eight))
 }
 
@@ -806,7 +806,7 @@ pub fn encode_gray_alpha10_266(
 ) -> Result<Vec<u8>, EncodeError> {
     validate_dims(width, height)?;
     validate_buf_u16(ya, width, height, 2)?;
-    let gray: Vec<u16> = ya.chunks_exact(2).map(|p| p[0]).collect();
+    let gray: Vec<u16> = ya.as_chunks::<2>().0.iter().map(|p| p[0]).collect();
     encode_gray10_266(&gray, width, height, cfg)
 }
 
@@ -916,7 +916,7 @@ pub fn encode_rgba12_with_alpha(
 ) -> Result<Vec<u8>, EncodeError> {
     let cfg = force_bd(cfg, BitDepth::Twelve);
     let master = encode_wide_stream(rgba, width, height, 4, &cfg)?;
-    let alpha_plane: Vec<u16> = rgba.chunks_exact(4).map(|p| p[3]).collect();
+    let alpha_plane: Vec<u16> = rgba.as_chunks::<4>().0.iter().map(|p| p[3]).collect();
     let alpha = encode_alpha_wide_stream(&alpha_plane, width, height, &cfg)?;
     isobmff::wrap_vvc_still_with_alpha(
         &master,
@@ -961,7 +961,7 @@ pub fn encode_gray_alpha12_266(
 ) -> Result<Vec<u8>, EncodeError> {
     validate_dims(width, height)?;
     validate_buf_u16(ya, width, height, 2)?;
-    let gray: Vec<u16> = ya.chunks_exact(2).map(|p| p[0]).collect();
+    let gray: Vec<u16> = ya.as_chunks::<2>().0.iter().map(|p| p[0]).collect();
     encode_gray12_266(&gray, width, height, cfg)
 }
 
@@ -1318,8 +1318,8 @@ pub fn encode_gray_alpha8(
     validate_dims(width, height)?;
     validate_buf_u8(ya, width, height, 2)?;
     let cfg = force_bd(cfg, BitDepth::Eight);
-    let gray: Vec<u8> = ya.chunks_exact(2).map(|p| p[0]).collect();
-    let alpha: Vec<u8> = ya.chunks_exact(2).map(|p| p[1]).collect();
+    let gray: Vec<u8> = ya.as_chunks::<2>().0.iter().map(|p| p[0]).collect();
+    let alpha: Vec<u8> = ya.as_chunks::<2>().0.iter().map(|p| p[1]).collect();
     let mono = cfg.clone().with_chroma(ChromaFormat::Monochrome);
     let master = encode_gray_266(&gray, width, height, &cfg)?;
     let alpha_stream = encode_yuv_266(&alpha, width, height, &mono)?;
@@ -1345,8 +1345,8 @@ pub fn encode_gray_alpha10(
     validate_dims(width, height)?;
     validate_buf_u16(ya, width, height, 2)?;
     let cfg = force_bd(cfg, BitDepth::Ten);
-    let gray: Vec<u16> = ya.chunks_exact(2).map(|p| p[0]).collect();
-    let alpha: Vec<u16> = ya.chunks_exact(2).map(|p| p[1]).collect();
+    let gray: Vec<u16> = ya.as_chunks::<2>().0.iter().map(|p| p[0]).collect();
+    let alpha: Vec<u16> = ya.as_chunks::<2>().0.iter().map(|p| p[1]).collect();
     let master = encode_gray10_266(&gray, width, height, &cfg)?;
     let alpha_stream = encode_alpha_wide_stream(&alpha, width, height, &cfg)?;
     isobmff::wrap_vvc_still_with_alpha(
@@ -1371,8 +1371,8 @@ pub fn encode_gray_alpha12(
     validate_dims(width, height)?;
     validate_buf_u16(ya, width, height, 2)?;
     let cfg = force_bd(cfg, BitDepth::Twelve);
-    let gray: Vec<u16> = ya.chunks_exact(2).map(|p| p[0]).collect();
-    let alpha: Vec<u16> = ya.chunks_exact(2).map(|p| p[1]).collect();
+    let gray: Vec<u16> = ya.as_chunks::<2>().0.iter().map(|p| p[0]).collect();
+    let alpha: Vec<u16> = ya.as_chunks::<2>().0.iter().map(|p| p[1]).collect();
     let master = encode_gray12_266(&gray, width, height, &cfg)?;
     let alpha_stream = encode_alpha_wide_stream(&alpha, width, height, &cfg)?;
     isobmff::wrap_vvc_still_with_alpha(
@@ -1415,7 +1415,7 @@ mod tests {
         assert!(encode_rgb12_266(&bad, w, h, &EncodeConfig::new()).is_err());
         // gray_alpha12 discards alpha == gray12 of the Y channel.
         let ya: Vec<u16> = (0..w * h * 2).map(|i| ((i * 5) % 4096) as u16).collect();
-        let y: Vec<u16> = ya.chunks_exact(2).map(|p| p[0]).collect();
+        let y: Vec<u16> = ya.as_chunks::<2>().0.iter().map(|p| p[0]).collect();
         let cfg = EncodeConfig::new().with_quality(80);
         assert_eq!(
             encode_gray_alpha12_266(&ya, w, h, &cfg).unwrap(),
@@ -1434,7 +1434,9 @@ mod tests {
         .unwrap();
         let d = decode(&heif).unwrap();
         let a_exp: Vec<u8> = rgba
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .flat_map(|p| p[3].to_le_bytes())
             .collect();
         assert_eq!(d.bit_depth, BitDepth::Twelve);
@@ -1462,7 +1464,9 @@ mod tests {
             // Re-encoding the decoded 12-bit planes losslessly reproduces them.
             let planes16: Vec<u16> = img
                 .planes
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|b| u16::from_le_bytes([b[0], b[1]]))
                 .collect();
             assert!(planes16.iter().all(|&v| v <= 4095));
@@ -1505,7 +1509,7 @@ mod tests {
     fn gray_alpha_discards_alpha() {
         let (w, h) = (16u32, 16u32);
         let ya: Vec<u8> = (0..w * h * 2).map(|i| (i % 256) as u8).collect();
-        let y: Vec<u8> = ya.chunks_exact(2).map(|p| p[0]).collect();
+        let y: Vec<u8> = ya.as_chunks::<2>().0.iter().map(|p| p[0]).collect();
         let cfg = EncodeConfig::new().with_quality(70);
         assert_eq!(
             encode_gray_alpha8_266(&ya, w, h, &cfg).unwrap(),
@@ -1554,7 +1558,9 @@ mod tests {
         let heif = encode_rgba10_with_alpha(&rgba, w, h, &cfg).unwrap();
         let img = decode(&heif).unwrap();
         let a_exp: Vec<u8> = rgba
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .flat_map(|p| p[3].to_le_bytes())
             .collect();
         assert_eq!(img.bit_depth, BitDepth::Ten);
@@ -1837,8 +1843,8 @@ mod tests {
         // 8-bit interleaved Y,A.
         let ya8: Vec<u8> = (0..w * h * 2).map(|i| (i % 256) as u8).collect();
         let img = decode(&encode_gray_alpha8(&ya8, w, h, &cfg).unwrap()).unwrap();
-        let y_exp: Vec<u8> = ya8.chunks_exact(2).map(|p| p[0]).collect();
-        let a_exp: Vec<u8> = ya8.chunks_exact(2).map(|p| p[1]).collect();
+        let y_exp: Vec<u8> = ya8.as_chunks::<2>().0.iter().map(|p| p[0]).collect();
+        let a_exp: Vec<u8> = ya8.as_chunks::<2>().0.iter().map(|p| p[1]).collect();
         assert_eq!(img.planes, y_exp, "8-bit gray luma");
         assert_eq!(
             img.alpha.as_ref().expect("8-bit alpha embedded").planes,
@@ -1849,11 +1855,15 @@ mod tests {
         let ya10: Vec<u16> = (0..w * h * 2).map(|i| ((i * 5) % 1024) as u16).collect();
         let img = decode(&encode_gray_alpha10(&ya10, w, h, &cfg).unwrap()).unwrap();
         let y_exp: Vec<u8> = ya10
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .flat_map(|p| p[0].to_le_bytes())
             .collect();
         let a_exp: Vec<u8> = ya10
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .flat_map(|p| p[1].to_le_bytes())
             .collect();
         assert_eq!(img.bit_depth, BitDepth::Ten);
@@ -1900,7 +1910,7 @@ mod tests {
         .unwrap();
         assert_eq!(img.luma_plane().bytes_per_sample, 1);
         assert!(img.chroma_planes().is_none(), "monochrome has no chroma");
-        let a_exp: Vec<u8> = ya.chunks_exact(2).map(|p| p[1]).collect();
+        let a_exp: Vec<u8> = ya.as_chunks::<2>().0.iter().map(|p| p[1]).collect();
         assert_eq!(
             img.alpha_plane().expect("alpha present").data,
             a_exp.as_slice()

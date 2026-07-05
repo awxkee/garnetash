@@ -184,7 +184,9 @@ impl PlaneView<'_> {
     pub fn to_u16(&self) -> Vec<u16> {
         if self.bytes_per_sample == 2 {
             self.data
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|b| u16::from_le_bytes([b[0], b[1]]))
                 .collect()
         } else {
@@ -1377,7 +1379,12 @@ impl DecodedImage {
         let (w, h) = (self.width as usize, self.height as usize);
         let mut rgb = vec![0u8; w * h * 3];
         if matches!(self.chroma, ChromaFormat::Monochrome) {
-            for (px, &y) in rgb.chunks_exact_mut(3).zip(&self.planes[..w * h]) {
+            for (px, &y) in rgb
+                .as_chunks_mut::<3>()
+                .0
+                .iter_mut()
+                .zip(&self.planes[..w * h])
+            {
                 px[0] = y;
                 px[1] = y;
                 px[2] = y;
@@ -1397,7 +1404,13 @@ impl DecodedImage {
             .enumerate()
         {
             let crow = (yy / sub_h) * dcw;
-            for (xx, (px, &yv)) in rgb_row.chunks_exact_mut(3).zip(y_row).enumerate() {
+            for (xx, (px, &yv)) in rgb_row
+                .as_chunks_mut::<3>()
+                .0
+                .iter_mut()
+                .zip(y_row)
+                .enumerate()
+            {
                 let y = yv as i32;
                 let ci = crow + xx / sub_w;
                 let cb = cb_plane[ci] as i32 - 128;
@@ -1639,7 +1652,7 @@ mod tests {
             // Alpha is monochrome and exactly the A channel (lossless).
             let alpha = alpha.expect("alpha present");
             assert_eq!(alpha.chroma, ChromaFormat::Monochrome);
-            let a_channel: Vec<u8> = rgba.chunks_exact(4).map(|p| p[3]).collect();
+            let a_channel: Vec<u8> = rgba.as_chunks::<4>().0.iter().map(|p| p[3]).collect();
             assert_eq!(alpha.planes, a_channel, "alpha {chroma:?}");
         }
 
