@@ -275,6 +275,7 @@ pub(crate) fn wrap_vvc_still(
     color: &ColorMetadata,
     meta: &ImageMetadata,
 ) -> Result<Vec<u8>, EncodeError> {
+    let chroma = chroma.for_dimensions(width, height);
     let (stored_w, stored_h) = stored_extent(width, height, chroma);
     let (coded_w, coded_h) = coded_extent(width, height);
     let needs_clap = (stored_w, stored_h) != (width, height);
@@ -606,6 +607,7 @@ pub(crate) fn wrap_vvc_still_with_alpha(
     color: &ColorMetadata,
 ) -> Result<Vec<u8>, EncodeError> {
     const ALPHA_URN: &[u8] = b"urn:mpeg:mpegB:cicp:systems:auxiliary:alpha\0";
+    let chroma = chroma.for_dimensions(width, height);
     let (stored_w, stored_h) = stored_extent(width, height, chroma);
     let (coded_w, coded_h) = coded_extent(width, height);
     let needs_clap = (stored_w, stored_h) != (width, height);
@@ -1100,7 +1102,7 @@ mod tests {
     }
 
     #[test]
-    fn odd_420_uses_stored_extent_and_clean_aperture() {
+    fn odd_420_uses_exact_promoted_extent() {
         let mut annexb = Vec::new();
         for second in [0x78, 0x80, 0x00] {
             annexb.extend_from_slice(&[0, 0, 0, 1, 1, second, 1]);
@@ -1121,21 +1123,13 @@ mod tests {
         let (ispe_s, _) = find_child(&heif, ipco_s, ipco_e, b"ispe", false).unwrap();
         assert_eq!(
             (rd32(&heif, ispe_s + 4), rd32(&heif, ispe_s + 8)),
-            (Some(10), Some(12))
+            (Some(9), Some(11))
         );
-        let (clap_s, _) = find_child(&heif, ipco_s, ipco_e, b"clap", false).unwrap();
-        assert_eq!(
-            &heif[clap_s..clap_s + 16],
-            &[0, 0, 0, 9, 0, 0, 0, 1, 0, 0, 0, 11, 0, 0, 0, 1]
-        );
-        assert_eq!(rd32(&heif, clap_s + 16), Some(u32::MAX));
-        assert_eq!(rd32(&heif, clap_s + 20), Some(2));
-        assert_eq!(rd32(&heif, clap_s + 24), Some(u32::MAX));
-        assert_eq!(rd32(&heif, clap_s + 28), Some(2));
+        assert!(find_child(&heif, ipco_s, ipco_e, b"clap", false).is_none());
         assert_eq!(extract_spatial_extents(&heif, 0), Some((9, 11)));
 
         let (ipma_s, _) = find_child(&heif, iprp_s, iprp_e, b"ipma", true).unwrap();
-        assert_eq!(heif[ipma_s + 6], 5);
-        assert_eq!(&heif[ipma_s + 7..ipma_s + 12], &[0x81, 2, 3, 4, 0x85]);
+        assert_eq!(heif[ipma_s + 6], 4);
+        assert_eq!(&heif[ipma_s + 7..ipma_s + 11], &[0x81, 2, 3, 4]);
     }
 }

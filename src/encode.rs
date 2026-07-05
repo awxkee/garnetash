@@ -715,9 +715,10 @@ fn encode_core<S: Copy + Into<i32>>(
     cclm: bool,
     deblock: bool,
 ) -> CoreOutput {
+    let chroma = chroma.for_dimensions(width, height);
     // Dual tree falls back to single tree for lossless non-4:2:0; AQ's cu_qp_delta
     // is not implemented for the dual tree, so it is disabled there.
-    let dual = dual_tree && !lossless;
+    let dual = dual_tree && !lossless && chroma.allows_dual_tree();
     // LFNST is validated for 8-bit (single and dual tree, every chroma format and
     // picture size). In the dual tree luma and chroma carry separate LFNST
     // indices; both are signalled (see replay_luma / replay_chroma).
@@ -3340,7 +3341,7 @@ pub(crate) fn encode_still_yuv(
     qp: u8,
     bit_depth: u8,
     lossless: bool,
-    chroma: ChromaFormat,
+    source_chroma: ChromaFormat,
     threads: usize,
     rdoq: bool,
     aq: bool,
@@ -3352,9 +3353,10 @@ pub(crate) fn encode_still_yuv(
     cclm: bool,
     deblock: bool,
 ) -> Result<Vec<u8>, crate::error::EncodeError> {
+    let chroma = source_chroma.for_dimensions(width, height);
     // Dual tree falls back to single tree for lossless non-4:2:0; AQ's cu_qp_delta
     // is not implemented for the dual tree, so it is disabled there.
-    let dual = dual_tree && !lossless;
+    let dual = dual_tree && !lossless && chroma.allows_dual_tree();
     // LFNST is validated for 8-bit (single and dual tree, every chroma format and
     // picture size). In the dual tree luma and chroma carry separate LFNST
     // indices; both are signalled (see replay_luma / replay_chroma).
@@ -3387,11 +3389,20 @@ pub(crate) fn encode_still_yuv(
     let ch = headers.coded_height() as usize;
     let (w, h) = (width as usize, height as usize);
     let (sub_w, sub_h) = (chroma.sub_w(), chroma.sub_h());
+    let (source_sub_w, source_sub_h) = (source_chroma.sub_w(), source_chroma.sub_h());
     let has_chroma = !chroma.is_monochrome();
     let cwc = if has_chroma { cw / sub_w } else { 0 };
     let chc = if has_chroma { ch / sub_h } else { 0 };
-    let dcw = if has_chroma { w.div_ceil(sub_w) } else { 0 };
-    let dch = if has_chroma { h.div_ceil(sub_h) } else { 0 };
+    let dcw = if has_chroma {
+        w.div_ceil(source_sub_w)
+    } else {
+        0
+    };
+    let dch = if has_chroma {
+        h.div_ceil(source_sub_h)
+    } else {
+        0
+    };
     let two_byte = bit_depth > 8;
     let bpp = if two_byte { 2 } else { 1 };
     let max_val = (1i32 << bit_depth) - 1;
@@ -3426,9 +3437,9 @@ pub(crate) fn encode_still_yuv(
     let mut src_cr = vec![0i32; cwc * chc];
     if has_chroma {
         for cy in 0..chc {
-            let sy = cy.min(dch - 1);
+            let sy = (cy * sub_h / source_sub_h).min(dch - 1);
             for cx in 0..cwc {
-                let sx = cx.min(dcw - 1);
+                let sx = (cx * sub_w / source_sub_w).min(dcw - 1);
                 src_cb[cy * cwc + cx] = rd(cb_plane, sy * dcw + sx).clamp(0, max_val);
                 src_cr[cy * cwc + cx] = rd(cr_plane, sy * dcw + sx).clamp(0, max_val);
             }
@@ -3437,8 +3448,8 @@ pub(crate) fn encode_still_yuv(
     Ok(encode_planes(headers, src_y, src_cb, src_cr, threads, rdoq).stream)
 }
 
-/// Encode packed 8-bit RGB(A) as a 4:2:0 VVC still picture. `stride_px` is the
-/// number of channels per pixel (3 for RGB, 4 for RGBA).
+/// Encode packed 8-bit RGB(A) as a VVC still picture. `stride_px` is the number
+/// of channels per pixel (3 for RGB, 4 for RGBA).
 pub(crate) fn encode_still(
     rgb: &[u8],
     width: u32,
@@ -3533,6 +3544,7 @@ pub(crate) fn encode_with_recon(
     cclm: bool,
     deblock: bool,
 ) -> (Vec<u8>, Vec<u8>) {
+    let chroma = chroma.for_dimensions(width, height);
     let scale_shift = (bit_depth - 8) as u32;
     let o = encode_core(
         rgb,
